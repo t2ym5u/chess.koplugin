@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - '_meta.lua'
+      - '*.lua'
+      - 'common/*.lua'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version from _meta.lua
+        id: meta
+        run: |
+          version=$(grep -oP 'version\s*=\s*"\K[^"]+' _meta.lua)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if release already exists
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "v${{ steps.meta.outputs.version }}" &>/dev/null; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout game-common
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/checkout@v4
+        with:
+          repository: t2ym5u/game-common
+          path: _game_common
+
+      - name: Build ZIP
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          PLUGIN="${GITHUB_REPOSITORY##*/}"
+          PLUGIN_DIR="/tmp/${PLUGIN}"
+          mkdir -p "${PLUGIN_DIR}/common"
+          rsync -a --exclude='.git' --exclude='.github' --exclude='common' \
+            . "${PLUGIN_DIR}/"
+          if [ -f "common/base_board.lua" ]; then
+            # Sudoku plugin: bundle sudoku-common (already in common/)
+            cp common/*.lua "${PLUGIN_DIR}/common/"
+          else
+            # Regular plugin: bundle game-common
+            cp -r _game_common/. "${PLUGIN_DIR}/common/"
+          fi
+          cd /tmp
+          zip -r "${PLUGIN}.zip" "${PLUGIN}/"
+          echo "ZIP=/tmp/${PLUGIN}.zip" >> "$GITHUB_ENV"
+          echo "PLUGIN=${PLUGIN}" >> "$GITHUB_ENV"
+
+      - name: Create release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${{ steps.meta.outputs.version }}" \
+            --title "v${{ steps.meta.outputs.version }}" \
+            --notes "Extract \`${PLUGIN}.zip\` into your KOReader \`plugins/\` folder.
+          The \`common/\` subdirectory is bundled in the archive." \
+            "$ZIP"
