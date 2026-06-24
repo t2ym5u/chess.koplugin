@@ -145,7 +145,7 @@ function EchecsScreen:buildLayout()
                 { text = _("Annuler"),    callback = function() self:onUndo() end },
                 { text = _("Retourner"), callback = function() self:onFlipBoard() end },
                 self:makeRulesButtonConfig(GAME_RULES_EN, GAME_RULES_FR),
-            self:makeCloseButtonConfig(),
+                self:makeCloseButtonConfig(),
             },
         },
     }
