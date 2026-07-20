@@ -10,7 +10,9 @@ local function lrequire(name)
 end
 
 local PluginBase   = require("plugin_base")
-local _            = require("gettext")
+local _            = require("i18n")
+
+require("i18n").extend(lrequire("i18n_fr"))
 local EchecsScreen = lrequire("screen")
 
 -- ---------------------------------------------------------------------------
