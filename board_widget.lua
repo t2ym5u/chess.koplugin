@@ -30,8 +30,6 @@ local EchecsBoardWidget = GridWidgetBase:extend{
     onCellAction = nil,
     cols         = 8,
     rows         = 8,
-    -- last_move: {fr,fc,tr,tc} or nil — set by screen after each move
-    last_move    = nil,
     -- flipped: true → black's perspective (rank 1 at top)
     flipped      = false,
 }
@@ -82,7 +80,7 @@ function EchecsBoardWidget:paintTo(bb, x, y)
     end
 
     -- Last move squares
-    local lm         = self.last_move
+    local lm         = board.last_move
     local lm_key_fr  = lm and (lm.fr * 8 + lm.fc) or nil
     local lm_key_to  = lm and (lm.tr * 8 + lm.tc) or nil
 

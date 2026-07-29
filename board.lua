@@ -14,6 +14,18 @@
 --   10 = black bishop, 11 = black queen,  12 = black king
 -- ---------------------------------------------------------------------------
 
+-- Load pgn.lua by absolute path (not a plain require by name) so this never
+-- collides with another plugin's same-named module in package.loaded.
+local _dir = debug.getinfo(1, "S").source:sub(2):match("(.*[/\\])") or "./"
+local function lrequire(name)
+    local key = _dir .. name
+    if not package.loaded[key] then
+        package.loaded[key] = assert(loadfile(_dir .. name .. ".lua"))()
+    end
+    return package.loaded[key]
+end
+local PGN = lrequire("pgn")
+
 local ChessBoard = {}
 ChessBoard.__index = ChessBoard
 
@@ -154,7 +166,12 @@ function ChessBoard:new()
     o.selected = nil
     o.status   = "playing"
     o.winner   = nil
+    o.draw_reason = nil
+    o.last_move   = nil
     o._history = {}          -- undo stack: array of snapshots
+    o._future  = {}          -- redo stack: array of snapshots
+    o._move_history = {}     -- parallel to _history: array of { san, move }
+    o._move_future  = {}     -- parallel to _future
     o._valid_moves_cache = nil
     o._selected_moves    = nil
     o.promo_pending      = nil
@@ -191,7 +208,12 @@ function ChessBoard:reset()
     self.selected = nil
     self.status   = "playing"
     self.winner   = nil
+    self.draw_reason = nil
+    self.last_move   = nil
     self._history = {}
+    self._future  = {}
+    self._move_history = {}
+    self._move_future  = {}
     self._valid_moves_cache = nil
     self._selected_moves    = nil
     self.promo_pending      = nil
@@ -618,6 +640,82 @@ function ChessBoard:getMovesForSquare(r, c)
 end
 
 -- ---------------------------------------------------------------------------
+-- Draw detection helpers
+-- ---------------------------------------------------------------------------
+
+-- True when neither side has enough material to ever force checkmate:
+-- K vs K, K+minor vs K, or K+B vs K+B with same-coloured-square bishops.
+-- Any pawn, rook, or queen on the board disqualifies (mate is still possible).
+local function hasInsufficientMaterial(sq)
+    local w_minors, b_minors = {}, {}
+    for r = 1, 8 do
+        for c = 1, 8 do
+            local p = sq[r][c]
+            if p ~= 0 then
+                local pt = pieceType(p)
+                if pt == 1 or pt == 2 or pt == 5 then
+                    return false  -- pawn, rook or queen present
+                elseif pt == 3 or pt == 4 then  -- knight or bishop
+                    local entry = { pt = pt, sq_color = (r + c) % 2 }
+                    if isWhite(p) then
+                        w_minors[#w_minors + 1] = entry
+                    else
+                        b_minors[#b_minors + 1] = entry
+                    end
+                end
+            end
+        end
+    end
+    if #w_minors == 0 and #b_minors == 0 then return true end        -- K vs K
+    if #w_minors == 1 and #b_minors == 0 then return true end        -- K+minor vs K
+    if #w_minors == 0 and #b_minors == 1 then return true end
+    if #w_minors == 1 and #b_minors == 1 then
+        local wm, bm = w_minors[1], b_minors[1]
+        return wm.pt == 4 and bm.pt == 4 and wm.sq_color == bm.sq_color  -- same-colour bishops
+    end
+    return false
+end
+
+-- Build a key identifying a position for threefold-repetition purposes:
+-- piece placement + side to move + castling rights + en-passant file.
+local function positionKeyFromFlat(flat, turn, castle, ep)
+    local parts = {}
+    for i = 1, 64 do parts[i] = flat[i] end
+    parts[65] = turn
+    parts[66] = castle.wK and 1 or 0
+    parts[67] = castle.wQ and 1 or 0
+    parts[68] = castle.bK and 1 or 0
+    parts[69] = castle.bQ and 1 or 0
+    parts[70] = ep or 0
+    return table.concat(parts, ",")
+end
+
+function ChessBoard:_currentFlat()
+    local flat = {}
+    for r = 1, 8 do
+        for c = 1, 8 do
+            flat[(r - 1) * 8 + c] = self.sq[r][c]
+        end
+    end
+    return flat
+end
+
+-- Counts how many times the current position has occurred so far, by
+-- replaying it against every position stored in the undo stack (each
+-- snapshot there is the position immediately before the corresponding
+-- move was played, so together with the live position they cover every
+-- distinct position reached since the game started / was loaded).
+function ChessBoard:_countRepetitions()
+    local cur_key = positionKeyFromFlat(self:_currentFlat(), self.turn, self.castle, self.ep)
+    local count = 1
+    for _, snap in ipairs(self._history) do
+        local key = positionKeyFromFlat(snap.sq_flat, snap.turn, snap.castle, snap.ep)
+        if key == cur_key then count = count + 1 end
+    end
+    return count
+end
+
+-- ---------------------------------------------------------------------------
 -- Game end detection
 -- ---------------------------------------------------------------------------
 
@@ -632,15 +730,63 @@ function ChessBoard:_updateStatus()
             self.status = "stalemate"
             self.winner = nil
         end
+        self.draw_reason = nil
     elseif self.halfmove >= 100 then
         self.status = "draw"
         self.winner = nil
+        self.draw_reason = "fifty_move"
+    elseif hasInsufficientMaterial(self.sq) then
+        self.status = "draw"
+        self.winner = nil
+        self.draw_reason = "insufficient_material"
+    elseif self:_countRepetitions() >= 3 then
+        self.status = "draw"
+        self.winner = nil
+        self.draw_reason = "repetition"
     else
         self.status = "playing"
         self.winner = nil
+        self.draw_reason = nil
     end
     -- Invalidate move cache (it was used above, now stale)
     self._valid_moves_cache = nil
+end
+
+-- ---------------------------------------------------------------------------
+-- Undo/redo snapshot helpers
+-- ---------------------------------------------------------------------------
+
+function ChessBoard:_captureSnapshot()
+    return {
+        sq_flat  = self:_currentFlat(),
+        turn     = self.turn,
+        castle   = { wK=self.castle.wK, wQ=self.castle.wQ,
+                     bK=self.castle.bK, bQ=self.castle.bQ },
+        ep          = self.ep,
+        halfmove    = self.halfmove,
+        status      = self.status,
+        winner      = self.winner,
+        draw_reason = self.draw_reason,
+    }
+end
+
+function ChessBoard:_restoreSnapshot(snap)
+    for r = 1, 8 do
+        for c = 1, 8 do
+            self.sq[r][c] = snap.sq_flat[(r-1)*8+c]
+        end
+    end
+    self.turn        = snap.turn
+    self.castle      = snap.castle
+    self.ep          = snap.ep
+    self.halfmove    = snap.halfmove
+    self.status      = snap.status
+    self.winner      = snap.winner
+    self.draw_reason = snap.draw_reason
+    self.selected = nil
+    self._valid_moves_cache = nil
+    self._selected_moves    = nil
+    self.promo_pending      = nil
 end
 
 -- ---------------------------------------------------------------------------
@@ -671,27 +817,19 @@ function ChessBoard:makeMove(fr, fc, tr, tc, promo_piece)
     end
     if not found then return false end
 
-    -- Save snapshot for undo
-    local snapshot = {
-        sq_flat  = {},
-        turn     = self.turn,
-        castle   = { wK=self.castle.wK, wQ=self.castle.wQ,
-                     bK=self.castle.bK, bQ=self.castle.bQ },
-        ep       = self.ep,
-        halfmove = self.halfmove,
-        status   = self.status,
-        winner   = self.winner,
-        selected = self.selected,
-    }
-    for r = 1, 8 do
-        for c = 1, 8 do
-            snapshot.sq_flat[(r-1)*8+c] = self.sq[r][c]
-        end
-    end
-    self._history[#self._history + 1] = snapshot
+    -- SAN must be computed before the move is applied (disambiguation needs
+    -- the pre-move position); toSAN applies/undoes internally to detect check.
+    local san = PGN.toSAN(self, found)
+
+    -- Save snapshot for undo; a fresh move invalidates any redo line.
+    self._history[#self._history + 1] = self:_captureSnapshot()
+    self._move_history[#self._move_history + 1] = { san = san, move = found }
+    self._future = {}
+    self._move_future = {}
 
     -- Apply move
     self:_applyMove(found)
+    self.last_move = found
 
     self.selected = nil
     self._valid_moves_cache = nil
@@ -702,28 +840,35 @@ function ChessBoard:makeMove(fr, fc, tr, tc, promo_piece)
     return true
 end
 
+-- Finds the legal move matching a SAN token (e.g. "Nf3", "exd5", "O-O",
+-- "e8=Q") in the current position and plays it via makeMove.
+function ChessBoard:makeMoveSAN(san)
+    local move = PGN.findMoveForSAN(self, san)
+    if not move then return false end
+    return self:makeMove(move.fr, move.fc, move.tr, move.tc, move.promo_piece)
+end
+
 -- ---------------------------------------------------------------------------
--- Undo
+-- Undo / redo
 -- ---------------------------------------------------------------------------
 
 function ChessBoard:undoMove()
     if #self._history == 0 then return false end
-    local snap = table.remove(self._history)
-    for r = 1, 8 do
-        for c = 1, 8 do
-            self.sq[r][c] = snap.sq_flat[(r-1)*8+c]
-        end
-    end
-    self.turn     = snap.turn
-    self.castle   = snap.castle
-    self.ep       = snap.ep
-    self.halfmove = snap.halfmove
-    self.status   = snap.status
-    self.winner   = snap.winner
-    self.selected = nil
-    self._valid_moves_cache = nil
-    self._selected_moves    = nil
-    self.promo_pending      = nil
+    self._future[#self._future + 1] = self:_captureSnapshot()
+    self._move_future[#self._move_future + 1] = table.remove(self._move_history)
+    self:_restoreSnapshot(table.remove(self._history))
+    local top = self._move_history[#self._move_history]
+    self.last_move = top and top.move or nil
+    return true
+end
+
+function ChessBoard:redoMove()
+    if #self._future == 0 then return false end
+    self._history[#self._history + 1] = self:_captureSnapshot()
+    local entry = table.remove(self._move_future)
+    self._move_history[#self._move_history + 1] = entry
+    self:_restoreSnapshot(table.remove(self._future))
+    self.last_move = entry.move
     return true
 end
 
@@ -808,37 +953,71 @@ end
 -- Serialization
 -- ---------------------------------------------------------------------------
 
-function ChessBoard:serialize()
-    local flat = {}
-    for r = 1, 8 do
-        for c = 1, 8 do
-            flat[(r-1)*8+c] = self.sq[r][c]
-        end
-    end
-    local hist = {}
-    for i, snap in ipairs(self._history) do
+local function serializeSnapshots(list)
+    local out = {}
+    for i, snap in ipairs(list) do
         local h = {}
         h.sq_flat  = {}
         for k, v in pairs(snap.sq_flat) do h.sq_flat[k] = v end
-        h.turn     = snap.turn
-        h.castle   = { wK=snap.castle.wK, wQ=snap.castle.wQ,
-                       bK=snap.castle.bK, bQ=snap.castle.bQ }
-        h.ep       = snap.ep
-        h.halfmove = snap.halfmove
-        h.status   = snap.status
-        h.winner   = snap.winner
-        hist[i] = h
+        h.turn        = snap.turn
+        h.castle      = { wK=snap.castle.wK, wQ=snap.castle.wQ,
+                          bK=snap.castle.bK, bQ=snap.castle.bQ }
+        h.ep          = snap.ep
+        h.halfmove    = snap.halfmove
+        h.status      = snap.status
+        h.winner      = snap.winner
+        h.draw_reason = snap.draw_reason
+        out[i] = h
     end
+    return out
+end
+
+local function deserializeSnapshots(list)
+    local out = {}
+    if type(list) ~= "table" then return out end
+    for _, h in ipairs(list) do
+        local snap = {
+            sq_flat     = {},
+            turn        = h.turn,
+            castle      = { wK=h.castle.wK, wQ=h.castle.wQ,
+                            bK=h.castle.bK, bQ=h.castle.bQ },
+            ep          = h.ep,
+            halfmove    = h.halfmove,
+            status      = h.status,
+            winner      = h.winner,
+            draw_reason = h.draw_reason,
+        }
+        for k, v in pairs(h.sq_flat) do snap.sq_flat[k] = v end
+        out[#out+1] = snap
+    end
+    return out
+end
+
+local function copyMoveLog(list)
+    local out = {}
+    for i, entry in ipairs(list) do
+        local move_copy = {}
+        for k, v in pairs(entry.move) do move_copy[k] = v end
+        out[i] = { san = entry.san, move = move_copy }
+    end
+    return out
+end
+
+function ChessBoard:serialize()
     return {
-        sq_flat  = flat,
-        turn     = self.turn,
-        castle   = { wK=self.castle.wK, wQ=self.castle.wQ,
-                     bK=self.castle.bK, bQ=self.castle.bQ },
-        ep       = self.ep,
-        halfmove = self.halfmove,
-        status   = self.status,
-        winner   = self.winner,
-        history  = hist,
+        sq_flat      = self:_currentFlat(),
+        turn         = self.turn,
+        castle       = { wK=self.castle.wK, wQ=self.castle.wQ,
+                         bK=self.castle.bK, bQ=self.castle.bQ },
+        ep           = self.ep,
+        halfmove     = self.halfmove,
+        status       = self.status,
+        winner       = self.winner,
+        draw_reason  = self.draw_reason,
+        history      = serializeSnapshots(self._history),
+        future       = serializeSnapshots(self._future),
+        move_history = copyMoveLog(self._move_history),
+        move_future  = copyMoveLog(self._move_future),
     }
 end
 
@@ -855,27 +1034,17 @@ function ChessBoard:load(data)
         and { wK=data.castle.wK~=false, wQ=data.castle.wQ~=false,
               bK=data.castle.bK~=false, bQ=data.castle.bQ~=false }
         or  { wK=true, wQ=true, bK=true, bQ=true }
-    self.ep       = data.ep
-    self.halfmove = data.halfmove or 0
-    self.status   = data.status   or "playing"
-    self.winner   = data.winner
-    self._history = {}
-    if type(data.history) == "table" then
-        for _, h in ipairs(data.history) do
-            local snap = {
-                sq_flat  = {},
-                turn     = h.turn,
-                castle   = { wK=h.castle.wK, wQ=h.castle.wQ,
-                             bK=h.castle.bK, bQ=h.castle.bQ },
-                ep       = h.ep,
-                halfmove = h.halfmove,
-                status   = h.status,
-                winner   = h.winner,
-            }
-            for k, v in pairs(h.sq_flat) do snap.sq_flat[k] = v end
-            self._history[#self._history+1] = snap
-        end
-    end
+    self.ep          = data.ep
+    self.halfmove    = data.halfmove or 0
+    self.status      = data.status   or "playing"
+    self.winner      = data.winner
+    self.draw_reason = data.draw_reason
+    self._history = deserializeSnapshots(data.history)
+    self._future  = deserializeSnapshots(data.future)
+    self._move_history = copyMoveLog(data.move_history or {})
+    self._move_future  = copyMoveLog(data.move_future or {})
+    local top = self._move_history[#self._move_history]
+    self.last_move = top and top.move or nil
     self.selected = nil
     self._valid_moves_cache = nil
     self._selected_moves    = nil
