@@ -24,7 +24,10 @@ Standard chess rules. Move pieces to put the opponent's king in checkmate. Speci
 - **Two-player local mode**
 - **Move highlight** — shows legal moves for selected piece
 - **Check indicator** — alerts when a king is in check
-- **Undo** — take back the last move
+- **Undo / Redo** — take back the last move, or replay it forward again
+- **Chess clock** — optional per-side time controls with increment
+- **PGN import/export** — save a game to file or load one back in
+- **Optional Stockfish/UCI engine** — use an external engine instead of the built-in AI, when available
 - **Auto-save** — game state saved and restored on next launch
 
 ## Installation
@@ -41,8 +44,19 @@ Standard chess rules. Move pieces to put the opponent's king in checkmate. Speci
 | Select a piece | Tap it |
 | Move to a square | Tap the destination |
 | Undo last move | Tap **Undo** |
+| Redo last undone move | Tap **Redo** |
 | New game | Tap **New** |
 | Show rules | Tap **Rules** |
+| Configure clock | Tap **Pendule** |
+| Export/import PGN | Tap **Exporter PGN** / **Importer PGN** |
+
+## Known limitations
+
+The optional Stockfish/UCI engine is not bundled with this plugin. It is
+only available if you supply your own compatible UCI engine binary at
+`bin/stockfish` inside the plugin folder. When no such binary is present
+(the default), the **Moteur** menu entry is hidden entirely and the game
+uses only the built-in engine — nothing needs to be configured either way.
 
 ## License
 
