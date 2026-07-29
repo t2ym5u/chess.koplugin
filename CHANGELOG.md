@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.14] - 2026-07-29
+
+### Changed
+- Repository and plugin id renamed from `echecs` to `chess`. Existing
+  installs are not migrated automatically — Plugin Manager will install
+  this as a new plugin, and per-device settings/stats saved under the old
+  `echecs` name are left in place but no longer read.
+
 ## [1.1.9] - 2026-07-29
 
 ### Added

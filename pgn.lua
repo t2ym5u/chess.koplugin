@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- pgn.lua — SAN move notation + PGN import/export for echecs.koplugin
+-- pgn.lua — SAN move notation + PGN import/export for chess.koplugin
 --
 -- Deliberately has no dependency on board.lua (avoids a circular require,
 -- since board.lua requires this module to build its SAN move log). Operates

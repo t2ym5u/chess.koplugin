@@ -1,5 +1,5 @@
 -- ---------------------------------------------------------------------------
--- ChessBoard — complete chess engine for echecs.koplugin
+-- ChessBoard — complete chess engine for chess.koplugin
 --
 -- Coordinate system:
 --   r=1  → top of screen → black's back rank (rank 8 in chess notation)

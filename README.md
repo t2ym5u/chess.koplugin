@@ -1,4 +1,4 @@
-# echecs.koplugin
+# chess.koplugin
 
 A Chess plugin for [KOReader](https://github.com/koreader/koreader).
 
@@ -32,7 +32,7 @@ Standard chess rules. Move pieces to put the opponent's king in checkmate. Speci
 
 ## Installation
 
-1. Download `echecs.koplugin.zip` from the [latest release](../../releases/latest).
+1. Download `chess.koplugin.zip` from the [latest release](../../releases/latest).
 2. Extract into the `plugins/` folder of your KOReader data directory.
 3. Restart KOReader.
 4. Open the menu → **Tools** → **Chess**.
