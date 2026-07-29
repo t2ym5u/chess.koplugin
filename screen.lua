@@ -155,6 +155,17 @@ function EchecsScreen:buildLayout()
         and math.max(sw - bw_size - Size.span.horizontal_default, 120)
         or  math.floor(sw * 0.94)
 
+    -- The status line can get long ("Blancs jouent. · Medium (IA=Noirs)").
+    -- In portrait it sits directly alongside board_frame in the same
+    -- VerticalGroup, and that group centers each child against the widest
+    -- one -- so if the status text is left wider than the board (e.g.
+    -- bound to the much wider buttons_w), it becomes the reference width
+    -- itself and no longer *looks* centered relative to the board above
+    -- it. Bind it to the board's own width there instead. In landscape it
+    -- sits next to the bottom buttons in the right-hand panel, where
+    -- buttons_w is the correct sibling reference.
+    self.status_text:setMaxWidth(is_landscape and buttons_w or bw_size)
+
     -- Title bar with Options menu
     local title_bar = self:buildTitleBar(_("Échecs"), function()
         local items = {
