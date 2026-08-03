@@ -49,6 +49,7 @@ jobs:
           PLUGIN_DIR="/tmp/${PLUGIN}"
           mkdir -p "${PLUGIN_DIR}/common"
           rsync -a --exclude='.git' --exclude='.github' --exclude='common' --exclude='_game_common' \
+            --exclude='test_*.lua' --exclude='.busted' \
             . "${PLUGIN_DIR}/"
           if [ -f "common/base_board.lua" ]; then
             cp common/*.lua "${PLUGIN_DIR}/common/"
