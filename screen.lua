@@ -167,17 +167,17 @@ function EchecsScreen:buildLayout()
     self.status_text:setMaxWidth(is_landscape and buttons_w or bw_size)
 
     -- Title bar with Options menu
-    local title_bar = self:buildTitleBar(_("Échecs"), function()
+    local title_bar = self:buildTitleBar(_("Chess"), function()
         local items = {
-            { text = _("Nouveau"),      callback = function() self:onNewGame() end },
-            { text = _("Joueurs"),      callback = function() self:openPlayersMenu() end },
+            { text = _("New"),      callback = function() self:onNewGame() end },
+            { text = _("Players"),      callback = function() self:openPlayersMenu() end },
             { text = self:_diffLabel(), callback = function() self:openDifficultyMenu() end },
-            { text = _("Pendule"),      callback = function() self:openClockMenu() end },
-            { text = _("Exporter PGN"), callback = function() self:onExportPGN() end },
-            { text = _("Importer PGN"), callback = function() self:onImportPGN() end },
+            { text = _("Clock"),      callback = function() self:openClockMenu() end },
+            { text = _("Export PGN"), callback = function() self:onExportPGN() end },
+            { text = _("Import PGN"), callback = function() self:onImportPGN() end },
         }
         if EngineUCI.binaryAvailable(UCI_BINARY_PATH) then
-            items[#items + 1] = { text = _("Moteur"), callback = function() self:openEngineMenu() end }
+            items[#items + 1] = { text = _("Engine"), callback = function() self:openEngineMenu() end }
         end
         items[#items + 1] = self:makeRulesButtonConfig(GAME_RULES_EN, GAME_RULES_FR)
         return items
@@ -188,9 +188,9 @@ function EchecsScreen:buildLayout()
         shrink_unneeded_width = true,
         width   = buttons_w,
         buttons = {{
-            { text = _("Annuler"),   callback = function() self:onUndo() end },
-            { text = _("Rejouer"),   callback = function() self:onRedo() end },
-            { text = _("Retourner"), callback = function() self:onFlipBoard() end },
+            { text = _("Undo"),   callback = function() self:onUndo() end },
+            { text = _("Redo"),   callback = function() self:onRedo() end },
+            { text = _("Flip"), callback = function() self:onFlipBoard() end },
         }},
     }
 
@@ -288,7 +288,7 @@ function EchecsScreen:showPromoDialog()
     local pieces = (color == "w")
         and { W_QUEEN, W_ROOK, W_BISHOP, W_KNIGHT }
         or  { B_QUEEN, B_ROOK, B_BISHOP, B_KNIGHT }
-    local labels = { _("Dame"), _("Tour"), _("Fou"), _("Cavalier") }
+    local labels = { _("Queen"), _("Rook"), _("Bishop"), _("Knight") }
 
     local buttons = {}
     for i, pv in ipairs(pieces) do
@@ -317,7 +317,7 @@ function EchecsScreen:showPromoDialog()
 
     local ButtonDialog = require("ui/widget/buttondialog")
     self._promo_dialog = ButtonDialog:new{
-        title   = _("Promotion — choisissez la pièce :"),
+        title   = _("Promotion — choose a piece:"),
         buttons = { buttons },
     }
     UIManager:show(self._promo_dialog)
@@ -328,9 +328,9 @@ end
 -- ---------------------------------------------------------------------------
 
 local function drawReasonLabel(reason)
-    if reason == "insufficient_material" then return _("matériel insuffisant") end
-    if reason == "repetition"            then return _("répétition de position") end
-    return _("règle des 50 coups")
+    if reason == "insufficient_material" then return _("insufficient material") end
+    if reason == "repetition"            then return _("threefold repetition") end
+    return _("50-move rule")
 end
 
 function EchecsScreen:onGameEnd()
@@ -339,17 +339,17 @@ function EchecsScreen:onGameEnd()
     local InfoMessage = require("ui/widget/infomessage")
     local msg
     if self._time_forfeit then
-        local winner = (self._time_forfeit == "w") and _("Noirs") or _("Blancs")
-        msg = winner .. " " .. _("gagnent au temps !")
+        local winner = (self._time_forfeit == "w") and _("Black") or _("White")
+        msg = winner .. " " .. _("wins on time!")
     else
         local st = self.board.status
         if st == "checkmate" then
-            local winner = (self.board.winner == "w") and _("Blancs") or _("Noirs")
-            msg = winner .. " " .. _("gagnent par mat !")
+            local winner = (self.board.winner == "w") and _("White") or _("Black")
+            msg = winner .. " " .. _("wins by checkmate!")
         elseif st == "stalemate" then
-            msg = _("Pat — partie nulle.")
+            msg = _("Stalemate — draw.")
         elseif st == "draw" then
-            msg = _("Nulle") .. " (" .. drawReasonLabel(self.board.draw_reason) .. ")."
+            msg = _("Draw") .. " (" .. drawReasonLabel(self.board.draw_reason) .. ")."
         else
             return
         end
@@ -460,7 +460,7 @@ end
 
 function EchecsScreen:triggerAI()
     if self.board.status ~= "playing" then return end
-    self:updateStatus(_("L'IA réfléchit..."))
+    self:updateStatus(_("AI is thinking..."))
     local diff = self.plugin:getSetting("difficulty", "medium")
     self:_getEngine():requestMove(self.board, diff, function(move)
         if move then
@@ -485,9 +485,9 @@ end
 function EchecsScreen:openEngineMenu()
     local current = self.plugin:getSetting("engine", "home")
     MenuHelper.openPickerMenu{
-        title      = _("Moteur"),
+        title      = _("Engine"),
         items      = {
-            { id = "home", text = _("Maison") },
+            { id = "home", text = _("Home") },
             { id = "uci",  text = _("Stockfish (UCI)") },
         },
         current_id = current,
@@ -507,14 +507,14 @@ function EchecsScreen:_activateUCIEngine()
     if not self._uci_engine then
         self._uci_engine = EngineUCI:new(UCI_BINARY_PATH)
     end
-    self:showMessage(_("Connexion au moteur Stockfish…"))
+    self:showMessage(_("Connecting to Stockfish engine…"))
     self._uci_engine:start(function(ok)
         if ok then
             self.plugin:saveSetting("engine", "uci")
-            self:showMessage(_("Moteur Stockfish activé."))
+            self:showMessage(_("Stockfish engine activated."))
         else
             self.plugin:saveSetting("engine", "home")
-            self:showMessage(_("Échec de connexion au moteur Stockfish. Retour au moteur maison."))
+            self:showMessage(_("Failed to connect to Stockfish engine. Falling back to the home engine."))
         end
     end)
 end
@@ -537,10 +537,10 @@ end
 function EchecsScreen:openPlayersMenu()
     local players = self.plugin:getSetting("players", 1)
     MenuHelper.openPickerMenu{
-        title      = _("Nombre de joueurs"),
+        title      = _("Number of players"),
         items      = {
-            { id = 1, text = _("1 joueur (contre l'IA)") },
-            { id = 2, text = _("2 joueurs") },
+            { id = 1, text = _("1 player (vs AI)") },
+            { id = 2, text = _("2 players") },
         },
         current_id = players,
         on_select  = function(id)
@@ -559,10 +559,10 @@ end
 function EchecsScreen:openColorMenu()
     local pc = self.plugin:getSetting("player_color", "w")
     MenuHelper.openPickerMenu{
-        title      = _("Jouez avec"),
+        title      = _("Play as"),
         items      = {
-            { id = "w", text = _("Blancs") },
-            { id = "b", text = _("Noirs") },
+            { id = "w", text = _("White") },
+            { id = "b", text = _("Black") },
         },
         current_id = pc,
         on_select  = function(id)
@@ -635,10 +635,10 @@ end
 function EchecsScreen:openClockMenu()
     local enabled = self.plugin:getSetting("clock_enabled", false)
     MenuHelper.openPickerMenu{
-        title      = _("Pendule"),
+        title      = _("Clock"),
         items      = {
-            { id = false, text = _("Désactivée") },
-            { id = true,  text = _("Activée") },
+            { id = false, text = _("Disabled") },
+            { id = true,  text = _("Enabled") },
         },
         current_id = enabled,
         on_select  = function(id)
@@ -661,8 +661,8 @@ function EchecsScreen:_promptClockTime(color)
     local base = self.plugin:getSetting("clock_base_minutes", { w = 10, b = 10 })
     local incr = self.plugin:getSetting("clock_increment_seconds", { w = 0, b = 0 })
     local label = (color == "w")
-        and _("Temps Blancs (minutes + incrément sec.)")
-        or  _("Temps Noirs (minutes + incrément sec.)")
+        and _("White time (minutes + increment sec.)")
+        or  _("Black time (minutes + increment sec.)")
     local default_text = string.format("%d + %d", base[color], incr[color])
 
     local dialog
@@ -671,7 +671,7 @@ function EchecsScreen:_promptClockTime(color)
         input = default_text,
         buttons = {{
             {
-                text     = _("Annuler"),
+                text     = _("Cancel"),
                 id       = "close",
                 callback = function() UIManager:close(dialog) end,
             },
@@ -682,7 +682,7 @@ function EchecsScreen:_promptClockTime(color)
                     local txt = dialog:getInputText()
                     local nb, ni = txt:match("^%s*(%d+)%s*%+%s*(%d+)%s*$")
                     if not nb then
-                        self:showMessage(_("Format invalide. Utilisez 'minutes + secondes'."))
+                        self:showMessage(_("Invalid format. Use 'minutes + seconds'."))
                         return
                     end
                     base[color] = math.max(1, tonumber(nb))
@@ -715,29 +715,29 @@ function EchecsScreen:updateStatus(msg)
     if msg then
         status = msg
     elseif self._time_forfeit then
-        local winner = (self._time_forfeit == "w") and _("Noirs") or _("Blancs")
-        status = winner .. " " .. _("gagnent au temps !")
+        local winner = (self._time_forfeit == "w") and _("Black") or _("White")
+        status = winner .. " " .. _("wins on time!")
     else
         local board = self.board
         if board.status == "checkmate" then
-            local winner = (board.winner == "w") and _("Blancs") or _("Noirs")
-            status = winner .. " " .. _("gagnent par mat !")
+            local winner = (board.winner == "w") and _("White") or _("Black")
+            status = winner .. " " .. _("wins by checkmate!")
         elseif board.status == "stalemate" then
-            status = _("Pat — partie nulle.")
+            status = _("Stalemate — draw.")
         elseif board.status == "draw" then
-            status = _("Nulle") .. " (" .. drawReasonLabel(board.draw_reason) .. ")."
+            status = _("Draw") .. " (" .. drawReasonLabel(board.draw_reason) .. ")."
         else
-            local turn = (board.turn == "w") and _("Blancs") or _("Noirs")
+            local turn = (board.turn == "w") and _("White") or _("Black")
             local in_check = board:isInCheck(board.turn)
             if in_check then
-                status = turn .. " — " .. _("ÉCHEC !")
+                status = turn .. " — " .. _("CHECK!")
             else
-                status = turn .. " " .. _("jouent.")
+                status = turn .. " " .. _("to move.")
             end
             local players = self.plugin:getSetting("players", 1)
             if players == 1 then
                 local pc = self.plugin:getSetting("player_color", "w")
-                local ai_label = (pc == "w") and _("(IA=Noirs)") or _("(IA=Blancs)")
+                local ai_label = (pc == "w") and _("(AI=Black)") or _("(AI=White)")
                 local diff = self.plugin:getSetting("difficulty", "medium")
                 local diff_label = MenuHelper.DIFFICULTY_LABELS[diff] or diff
                 status = status .. "  ·  " .. diff_label .. " " .. ai_label
@@ -761,13 +761,13 @@ local function pgnResultTag(board)
 end
 
 function EchecsScreen:_pgnHeaders()
-    local white_label, black_label = _("Joueur"), _("Joueur")
+    local white_label, black_label = _("Player"), _("Player")
     if self.plugin:getSetting("players", 1) == 1 then
         local pc = self.plugin:getSetting("player_color", "w")
-        if pc == "w" then black_label = _("IA") else white_label = _("IA") end
+        if pc == "w" then black_label = _("AI") else white_label = _("AI") end
     end
     return {
-        Event  = _("Partie Échecs"),
+        Event  = _("Chess Game"),
         Date   = os.date("%Y.%m.%d"),
         White  = white_label,
         Black  = black_label,
@@ -779,7 +779,7 @@ function EchecsScreen:onExportPGN()
     local PathChooser = require("ui/widget/pathchooser")
     local lfs = require("libs/libkoreader-lfs")
     UIManager:show(PathChooser:new{
-        title             = _("Choisir un dossier pour l'export PGN"),
+        title             = _("Choose a folder for the PGN export"),
         path              = lfs.currentdir(),
         select_directory  = true,
         select_file       = false,
@@ -792,16 +792,16 @@ function EchecsScreen:_promptPGNFilename(dir)
     local InputDialog = require("ui/widget/inputdialog")
     local dialog
     dialog = InputDialog:new{
-        title = _("Nom du fichier PGN"),
+        title = _("PGN file name"),
         input = "partie.pgn",
         buttons = {{
             {
-                text     = _("Annuler"),
+                text     = _("Cancel"),
                 id       = "close",
                 callback = function() UIManager:close(dialog) end,
             },
             {
-                text             = _("Enregistrer"),
+                text             = _("Save"),
                 is_enter_default = true,
                 callback         = function()
                     local filename = dialog:getInputText():gsub("\n$", "")
@@ -827,19 +827,19 @@ function EchecsScreen:_writePGNFile(path)
 
     local fh, err = io.open(path, "w")
     if not fh then
-        self:showMessage(_("Échec de l'export PGN : ") .. tostring(err))
+        self:showMessage(_("PGN export failed: ") .. tostring(err))
         return
     end
     fh:write(pgn_text)
     fh:close()
-    self:showMessage(_("Partie exportée vers ") .. path)
+    self:showMessage(_("Game exported to ") .. path)
 end
 
 function EchecsScreen:onImportPGN()
     local PathChooser = require("ui/widget/pathchooser")
     local lfs = require("libs/libkoreader-lfs")
     UIManager:show(PathChooser:new{
-        title            = _("Choisir un fichier PGN"),
+        title            = _("Choose a PGN file"),
         path             = lfs.currentdir(),
         select_directory = false,
         show_parent      = self,
@@ -850,7 +850,7 @@ end
 function EchecsScreen:_readPGNFile(path)
     local fh, err = io.open(path, "r")
     if not fh then
-        self:showMessage(_("Impossible d'ouvrir le fichier : ") .. tostring(err))
+        self:showMessage(_("Unable to open file: ") .. tostring(err))
         return
     end
     local text = fh:read("*a")
@@ -860,7 +860,7 @@ function EchecsScreen:_readPGNFile(path)
     local new_board = ChessBoard:new()
     for i, san in ipairs(sans) do
         if not new_board:makeMoveSAN(san) then
-            self:showMessage(_("Coup PGN invalide : ") .. san .. " (#" .. i .. ")")
+            self:showMessage(_("Invalid PGN move: ") .. san .. " (#" .. i .. ")")
             return
         end
     end
@@ -876,7 +876,7 @@ function EchecsScreen:_readPGNFile(path)
     self.plugin:saveState(self:serializeState())
     self:buildLayout()
     UIManager:setDirty(self, function() return "ui", self.dimen end)
-    self:showMessage(_("Partie importée (") .. #sans .. " " .. _("coups") .. ").")
+    self:showMessage(_("Game imported (") .. #sans .. " " .. _("moves") .. ").")
 end
 
 return EchecsScreen
