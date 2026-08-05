@@ -21,7 +21,7 @@ local EchecsScreen = lrequire("screen")
 
 local EchecsPlugin = PluginBase:extend{
     name      = "chess",
-    menu_text = _("Échecs"),
+    menu_text = _("Chess"),
     menu_hint = "tools",
 }
 
