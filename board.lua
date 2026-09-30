@@ -1255,9 +1255,20 @@ function ChessBoard:getAIMove(depth)
     local best_val   = maximizing and -math.huge or math.huge
     local best_moves = {}
 
+    -- Carrying the running best into the window is what lets the root prune at
+    -- all; a fresh (-inf, +inf) per move discards every cutoff between
+    -- siblings. The window is widened by one either way so that a move scoring
+    -- *exactly* the current best still comes back with its true value instead
+    -- of failing low -- otherwise the tie collection above, and the variety it
+    -- buys, would quietly stop working. Safe because _evaluate() is integral.
     for _, m in ipairs(legal) do
+        local alpha = maximizing and (best_val - 1) or -math.huge
+        local beta  = maximizing and math.huge or (best_val + 1)
+        if best_val == math.huge or best_val == -math.huge then
+            alpha, beta = -math.huge, math.huge
+        end
         local saved = self:_applyMove(m)
-        local val   = self:_alphaBeta(depth - 1, -math.huge, math.huge, not maximizing)
+        local val   = self:_alphaBeta(depth - 1, alpha, beta, not maximizing)
         self:_undoMove(saved)
         if maximizing then
             if val > best_val then
