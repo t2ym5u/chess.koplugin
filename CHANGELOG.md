@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.20] - 2026-09-30
+
+### Fixed
+- The root search gave every candidate move a fresh (-infinity, +infinity)
+  window, discarding every cutoff between siblings — most of what alpha-beta
+  is for. It now carries the running best score into the window, widened by
+  one either way so a move scoring *exactly* the current best still returns
+  its true value and the existing tie collection (which picks randomly among
+  equal moves, for variety) keeps working.
+- The AI plays identically — verified move for move on 40 random positions at
+  both depth 3 and depth 4 — in a quarter of the time. On "hard" that takes
+  the worst single move from 4.2s to about 1s on a desktop.
+
 ## [1.1.15] - 2026-07-31
 
 ### Fixed
