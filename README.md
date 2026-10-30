@@ -45,17 +45,17 @@ Standard chess rules. Move pieces to put the opponent's king in checkmate. Speci
 | Move to a square | Tap the destination |
 | Undo last move | Tap **Undo** |
 | Redo last undone move | Tap **Redo** |
-| New game | Tap **New** |
+| New game | Tap **New game** |
 | Show rules | Tap **Rules** |
-| Configure clock | Tap **Pendule** |
-| Export/import PGN | Tap **Exporter PGN** / **Importer PGN** |
+| Configure clock | Tap **Clock** |
+| Export/import PGN | Tap **Export PGN** / **Import PGN** |
 
 ## Known limitations
 
 The optional Stockfish/UCI engine is not bundled with this plugin. It is
 only available if you supply your own compatible UCI engine binary at
 `bin/stockfish` inside the plugin folder. When no such binary is present
-(the default), the **Moteur** menu entry is hidden entirely and the game
+(the default), the **Engine** menu entry is hidden entirely and the game
 uses only the built-in engine — nothing needs to be configured either way.
 
 ## License

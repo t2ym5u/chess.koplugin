@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-10-30
+
+### Changed
+- Redesigned play screen: the board fills the room the controls leave, with a
+  full-width Undo/Redo/Flip bar.
+- Title-bar menu in the shared order, with current values: New game (was
+  "New"), "Difficulty: Medium", "Players: 1", "Clock: 10+0" (or "Disabled"),
+  "Engine: Home" when a UCI engine is installed, then Export/Import PGN and
+  Rules. Players, Clock and Engine used to show no value.
+- The status line reads "Medium · White to move" (the "(AI=Black)" part is
+  gone) and wraps in landscape instead of being cut off.
+- Once the game is over (checkmate, stalemate, draw or flag fall), the action
+  bar shows "New game" in place of Undo/Redo/Flip.
+
+### Fixed
+- The rank and file labels around the board, and the letters used for pieces
+  on very small squares, were scaled by DPI twice and came out too large on
+  high-DPI screens; they are now sized in pixels and centred.
+
 ## [1.1.21] - 2026-10-01
 
 ### Fixed

@@ -5,6 +5,7 @@
 -- ---------------------------------------------------------------------------
 
 local Blitbuffer = require("ffi/blitbuffer")
+local Device     = require("device")
 local Font       = require("ui/font")
 local Geom       = require("ui/geometry")
 local RenderText = require("ui/rendertext")
@@ -12,6 +13,8 @@ local RenderText = require("ui/rendertext")
 local gwb            = require("grid_widget_base")
 local GridWidgetBase = gwb.GridWidgetBase
 local ChessPieces    = require("chess_pieces")
+
+local Screen = Device.screen
 
 -- Square colors
 local SQ_LIGHT   = Blitbuffer.COLOR_GRAY_E
@@ -45,7 +48,8 @@ function EchecsBoardWidget:init()
     -- footprint (self.size, used by callers for outer layout sizing)
     -- is unchanged.
     local approx_cell = self.size / 8
-    local label_size   = math.max(6, math.floor(approx_cell * 0.22))
+    -- Font:getFace scales its size by DPI; this one is derived from pixels.
+    local label_size   = math.max(6, math.floor(approx_cell * 0.22 / (Screen:scaleBySize(1000) / 1000)))
     self.label_face    = Font:getFace("smallinfofont", label_size)
 
     local sample = RenderText:sizeUtf8Text(0, 200, self.label_face, "8", true, false)
@@ -183,7 +187,7 @@ function EchecsBoardWidget:paintTo(bb, x, y)
         local board_row  = flip and i or (9 - i)
         local rank_label = tostring(board_row)
         local row_top = gy + math.floor((i - 1) * ch)
-        local m1      = RenderText:sizeUtf8Text(0, margin, label_face, rank_label, true, false)
+        local m1      = RenderText:sizeUtf8Text(0, Screen:getWidth(), label_face, rank_label, true, false)
         local base1   = row_top + math.floor((ch + m1.y_top - m1.y_bottom) / 2)
         local lx1     = x + math.floor((margin - m1.x) / 2)
         RenderText:renderUtf8Text(bb, lx1, base1, label_face, rank_label,
@@ -193,7 +197,7 @@ function EchecsBoardWidget:paintTo(bb, x, y)
         local board_col  = flip and (9 - i) or i
         local file_label = file_letters[board_col] or ""
         local col_left = gx + math.floor((i - 1) * cw)
-        local m2       = RenderText:sizeUtf8Text(0, margin, label_face, file_label, true, false)
+        local m2       = RenderText:sizeUtf8Text(0, Screen:getWidth(), label_face, file_label, true, false)
         local lx2      = col_left + math.floor((cw - m2.x) / 2)
         local base2    = gy + gs + math.floor((margin + m2.y_top - m2.y_bottom) / 2)
         RenderText:renderUtf8Text(bb, lx2, base2, label_face, file_label,
