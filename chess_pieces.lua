@@ -211,11 +211,15 @@ function M.drawPiece(bb, cx, cy, cw, ch, piece)
     if iw < 10 or ih < 10 then
         local Font       = require("ui/font")
         local RenderText = require("ui/rendertext")
-        local face   = Font:getFace("cfont", math.max(8, math.floor(ih * 0.65)))
+        local Screen     = require("device").screen
+        -- getFace scales by DPI; ih is in pixels. Measure unbounded (a limit
+        -- of iw cuts the text) and centre on the ink box.
+        local face   = Font:getFace("cfont",
+            math.max(8, math.floor(ih * 0.65 / (Screen:scaleBySize(1000) / 1000))))
         local letter = LETTERS[piece] or "?"
-        local m  = RenderText:sizeUtf8Text(0, iw, face, letter, true, false)
+        local m  = RenderText:sizeUtf8Text(0, Screen:getWidth(), face, letter, true, false)
         local tx = ix + math.floor((iw - m.x) / 2)
-        local ty = iy + math.floor((ih - (m.y_bottom - m.y_top)) / 2) + math.abs(m.y_top)
+        local ty = iy + math.floor(ih / 2 + (m.y_top - m.y_bottom) / 2)
         RenderText:renderUtf8Text(bb, tx, ty, face, letter, true, false, draw_c)
         return
     end

@@ -11,8 +11,6 @@ local function lrequire(name)
     return package.loaded[key]
 end
 
-local ButtonTable     = require("ui/widget/buttontable")
-local Device          = require("device")
 local Font            = require("ui/font")
 local FrameContainer  = require("ui/widget/container/framecontainer")
 local HorizontalGroup = require("ui/widget/horizontalgroup")
@@ -23,6 +21,7 @@ local UIManager       = require("ui/uimanager")
 local VerticalGroup   = require("ui/widget/verticalgroup")
 local VerticalSpan    = require("ui/widget/verticalspan")
 local _               = require("i18n")
+local T               = require("ffi/util").template
 
 local MenuHelper       = require("menu_helper")
 local ScreenBase       = require("screen_base")
@@ -36,7 +35,6 @@ local EngineUCI        = lrequire("engine_uci")
 
 local UCI_BINARY_PATH = _dir .. "bin/stockfish"
 
-local DeviceScreen = Device.screen
 
 -- ---------------------------------------------------------------------------
 -- EchecsScreen
@@ -118,6 +116,11 @@ function EchecsScreen:serializeState()
     }
 end
 
+-- Checkmate, stalemate, a draw or a flag fall all end the game.
+function EchecsScreen:isRoundOver()
+    return self._time_forfeit ~= nil or self.board.status ~= "playing"
+end
+
 function EchecsScreen:_isAITurn()
     local players = self.plugin:getSetting("players", 1)
     if players ~= 1 then return false end
@@ -132,103 +135,76 @@ end
 -- ---------------------------------------------------------------------------
 
 function EchecsScreen:buildLayout()
-    local board = self.board
-
-    self.board_widget = EchecsBoardWidget:new{
-        board        = board,
-        flipped      = self._flipped or false,
-        onCellAction = function(r, c) self:onCellTap(r, c) end,
-    }
-
     local is_landscape = self:isLandscape()
-    local sw = DeviceScreen:getWidth()
-
-    local board_frame = FrameContainer:new{
-        padding = Size.padding.default,
-        margin  = Size.margin.default,
-        self.board_widget,
-    }
-
-    local bw_size      = self.board_widget.size
-        + (Size.padding.default + Size.margin.default) * 2
-    local buttons_w    = is_landscape
-        and math.max(sw - bw_size - Size.span.horizontal_default, 120)
-        or  math.floor(sw * 0.94)
-
-    -- The status line can get long ("Blancs jouent. · Medium (IA=Noirs)").
-    -- In portrait it sits directly alongside board_frame in the same
-    -- VerticalGroup, and that group centers each child against the widest
-    -- one -- so if the status text is left wider than the board (e.g.
-    -- bound to the much wider buttons_w), it becomes the reference width
-    -- itself and no longer *looks* centered relative to the board above
-    -- it. Bind it to the board's own width there instead. In landscape it
-    -- sits next to the bottom buttons in the right-hand panel, where
-    -- buttons_w is the correct sibling reference.
-    self.status_text:setMaxWidth(is_landscape and buttons_w or bw_size)
 
     -- Title bar with Options menu
     local title_bar = self:buildTitleBar(_("Chess"), function()
         local items = {
-            { text = _("New"),      callback = function() self:onNewGame() end },
-            { text = _("Players"),      callback = function() self:openPlayersMenu() end },
-            { text = self:_diffLabel(), callback = function() self:openDifficultyMenu() end },
-            { text = _("Clock"),      callback = function() self:openClockMenu() end },
-            { text = _("Export PGN"), callback = function() self:onExportPGN() end },
-            { text = _("Import PGN"), callback = function() self:onImportPGN() end },
+            { text = _("New game"), callback = function() self:onNewGame() end },
+            { text = T(_("Difficulty: %1"), self:_diffLabel()),
+              callback = function() self:openDifficultyMenu() end },
+            { text = T(_("Players: %1"), self.plugin:getSetting("players", 1)),
+              callback = function() self:openPlayersMenu() end },
+            { text = T(_("Clock: %1"), self:_clockLabel()),
+              callback = function() self:openClockMenu() end },
         }
         if EngineUCI.binaryAvailable(UCI_BINARY_PATH) then
-            items[#items + 1] = { text = _("Engine"), callback = function() self:openEngineMenu() end }
+            items[#items + 1] = { text = T(_("Engine: %1"), self:_engineLabel()),
+                                  callback = function() self:openEngineMenu() end }
         end
+        items[#items + 1] = { text = _("Export PGN"), callback = function() self:onExportPGN() end }
+        items[#items + 1] = { text = _("Import PGN"), callback = function() self:onImportPGN() end }
         items[#items + 1] = self:makeRulesButtonConfig(GAME_RULES_EN, GAME_RULES_FR)
         return items
     end)
 
-    -- Bottom button row: Undo | Redo | Flip
-    local bottom_buttons = ButtonTable:new{
-        shrink_unneeded_width = true,
-        width   = buttons_w,
-        buttons = {{
-            { text = _("Undo"),   callback = function() self:onUndo() end },
-            { text = _("Redo"),   callback = function() self:onRedo() end },
-            { text = _("Flip"), callback = function() self:onFlipBoard() end },
-        }},
-    }
+    local controls_w = self:getControlsWidth()
+    self.status_text:setMaxWidth(controls_w)
+    local controls = VerticalGroup:new{ align = "center", self.status_text }
 
     self.clock_text = nil
-    local status_block = self.status_text
     if self.clock then
         self.clock_text = TextWidget:new{ text = "", face = Font:getFace("smallinfofont") }
-        status_block = VerticalGroup:new{
-            align = "center",
-            self.status_text,
-            VerticalSpan:new{ width = Size.padding.small },
-            self.clock_text,
-        }
+        self.clock_text:setMaxWidth(controls_w)
+        controls[#controls + 1] = VerticalSpan:new{ width = Size.padding.small }
+        controls[#controls + 1] = self.clock_text
         self:_updateClockDisplay()
     end
 
+    controls[#controls + 1] = VerticalSpan:new{ width = Size.span.vertical_large }
+    controls[#controls + 1] = self:buildActionBar({
+        { text = _("Undo"), callback = function() self:onUndo() end },
+        { text = _("Redo"), callback = function() self:onRedo() end },
+        { text = _("Flip"), callback = function() self:onFlipBoard() end },
+    })
+
+    local frame_pad = Size.padding.default
+    local frame_extra = 2 * (frame_pad + Size.border.window)
+    local budget_w, budget_h = self:getBoardBudget(title_bar, controls)
+    self.board_widget = EchecsBoardWidget:new{
+        board        = self.board,
+        flipped      = self._flipped or false,
+        max_size     = math.min(budget_w, budget_h) - frame_extra,
+        onCellAction = function(r, c) self:onCellTap(r, c) end,
+    }
+
+    local board_frame = FrameContainer:new{
+        padding = frame_pad,
+        margin  = 0,
+        self.board_widget,
+    }
+
     if is_landscape then
-        local right_panel = VerticalGroup:new{
-            align = "center",
-            status_block,
-            VerticalSpan:new{ width = Size.span.vertical_large },
-            bottom_buttons,
-        }
         local content = HorizontalGroup:new{
             align = "center",
             board_frame,
-            HorizontalSpan:new{ width = Size.span.horizontal_default },
-            right_panel,
+            HorizontalSpan:new{ width = self:getGutter() },
+            controls,
         }
         self:buildLandscapeLayout(title_bar, content)
     else
-        local content = VerticalGroup:new{
-            align = "center",
-            board_frame,
-            VerticalSpan:new{ width = Size.span.vertical_large },
-            status_block,
-        }
-        self:buildPortraitLayout(title_bar, content, bottom_buttons)
+        self:buildPortraitLayout(title_bar, board_frame,
+            VerticalGroup:new{ align = "center", controls, VerticalSpan:new{ width = self:getGutter() } })
     end
     self:updateStatus()
 end
@@ -236,6 +212,26 @@ end
 function EchecsScreen:_diffLabel()
     local diff = self.plugin:getSetting("difficulty", "medium")
     return MenuHelper.DIFFICULTY_LABELS[diff] or diff
+end
+
+-- "10+0" (or "10+0 / 5+3" when the two sides differ), or "Disabled".
+function EchecsScreen:_clockLabel()
+    if not self.plugin:getSetting("clock_enabled", false) then return _("Disabled") end
+    local base = self.plugin:getSetting("clock_base_minutes", { w = 10, b = 10 })
+    local incr = self.plugin:getSetting("clock_increment_seconds", { w = 0, b = 0 })
+    local w = string.format("%d+%d", base.w, incr.w)
+    local b = string.format("%d+%d", base.b, incr.b)
+    return w == b and w or (w .. " / " .. b)
+end
+
+local ENGINE_LABELS = {
+    home = _("Home"),
+    uci  = _("Stockfish (UCI)"),
+}
+
+function EchecsScreen:_engineLabel()
+    local id = self.plugin:getSetting("engine", "home")
+    return ENGINE_LABELS[id] or id
 end
 
 -- ---------------------------------------------------------------------------
@@ -487,8 +483,8 @@ function EchecsScreen:openEngineMenu()
     MenuHelper.openPickerMenu{
         title      = _("Engine"),
         items      = {
-            { id = "home", text = _("Home") },
-            { id = "uci",  text = _("Stockfish (UCI)") },
+            { id = "home", text = ENGINE_LABELS.home },
+            { id = "uci",  text = ENGINE_LABELS.uci },
         },
         current_id = current,
         on_select  = function(id)
@@ -537,7 +533,7 @@ end
 function EchecsScreen:openPlayersMenu()
     local players = self.plugin:getSetting("players", 1)
     MenuHelper.openPickerMenu{
-        title      = _("Number of players"),
+        title      = _("Players"),
         items      = {
             { id = 1, text = _("1 player (vs AI)") },
             { id = 2, text = _("2 players") },
@@ -728,23 +724,23 @@ function EchecsScreen:updateStatus(msg)
             status = _("Draw") .. " (" .. drawReasonLabel(board.draw_reason) .. ")."
         else
             local turn = (board.turn == "w") and _("White") or _("Black")
-            local in_check = board:isInCheck(board.turn)
-            if in_check then
-                status = turn .. " — " .. _("CHECK!")
+            local turn_part
+            if board:isInCheck(board.turn) then
+                turn_part = turn .. " — " .. _("CHECK!")
             else
-                status = turn .. " " .. _("to move.")
+                turn_part = T(_("%1 to move"), turn)
             end
-            local players = self.plugin:getSetting("players", 1)
-            if players == 1 then
-                local pc = self.plugin:getSetting("player_color", "w")
-                local ai_label = (pc == "w") and _("(AI=Black)") or _("(AI=White)")
+            local diff_label
+            if self.plugin:getSetting("players", 1) == 1 then
                 local diff = self.plugin:getSetting("difficulty", "medium")
-                local diff_label = MenuHelper.DIFFICULTY_LABELS[diff] or diff
-                status = status .. "  ·  " .. diff_label .. " " .. ai_label
+                diff_label = MenuHelper.DIFFICULTY_LABELS[diff] or diff
             end
+            status = self:joinStatus(diff_label, turn_part)
         end
     end
     ScreenBase.updateStatus(self, status)
+    -- Every move, undo, redo, AI reply, flag fall and import ends here.
+    self:refreshActionBar()
 end
 
 -- ---------------------------------------------------------------------------
