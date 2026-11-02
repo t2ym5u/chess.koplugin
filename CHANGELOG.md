@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.1] - 2026-11-02
+
+### Changed
+- Listed under **Tools → Games**, grouped by category, instead of its own
+  entry in the Tools menu (game-common 1.9.1).
+
 ## [1.2.0] - 2026-10-30
 
 ### Changed
