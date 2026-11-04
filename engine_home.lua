@@ -23,12 +23,12 @@ function EngineHome:isAvailable()
 end
 
 function EngineHome:requestMove(board, difficulty, callback)
-    local depth = (difficulty == "easy") and 1 or (difficulty == "hard") and 3 or 2
     local token = {}
     self._active_token = token
     UIManager:scheduleIn(0.1, function()
         if self._active_token ~= token then return end  -- cancelled (e.g. undo pressed)
-        callback(board:getAIMove(depth))
+        -- Depth and time budget per level: ChessBoard.AI_LEVELS (board.lua).
+        callback(board:getAIMoveForLevel(difficulty))
     end)
 end
 

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-11-04
+
+### Changed
+- The built-in AI is several times faster: Hard's slowest move went from
+  about 1.6 s to 0.14 s on a desktop (on a Kobo, from roughly 40 s to at
+  most 2.5 s), and every level now has a time limit (Hard 2.5 s, Medium 1.5 s, Easy 0.5 s on
+  an e-reader). When a move would take longer, the AI deepens its search one
+  step at a time and plays the best move of the deepest search it finished;
+  on a Kobo, Hard still completes its full search on about 98 % of moves.
+
+### Fixed
+- The AI misread the value of every piece (the material table was shifted
+  by one: white pawns counted for nothing and black pawns for more than a
+  queen), so it played far below its level. It now wins about 18 games out
+  of 20 against the previous version at the same level.
+- Pawn checks were not detected: a king could step onto a square attacked
+  by a pawn, and a pawn giving check was ignored.
+- When several moves lead to mate, the AI now picks the quickest one
+  instead of possibly delaying it forever.
+
 ## [1.2.3] - 2026-11-03
 
 ### Changed
