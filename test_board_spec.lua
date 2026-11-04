@@ -332,6 +332,100 @@ describe("ChessBoard", function()
         end)
     end)
 
+    -- Positions from FEN (board + side to move + castling only).
+    local FEN_PIECES = { P=1, R=2, N=3, B=4, Q=5, K=6, p=7, r=8, n=9, b=10, q=11, k=12 }
+    local function fromFEN(fen)
+        local placement, side, cas = fen:match("^(%S+) (%S+) (%S+)")
+        local pieces, r, c = {}, 1, 1
+        for ch in placement:gmatch(".") do
+            if ch == "/" then r = r + 1; c = 1
+            elseif ch:match("%d") then c = c + tonumber(ch)
+            else pieces[#pieces + 1] = { r, c, FEN_PIECES[ch] }; c = c + 1 end
+        end
+        return loadPosition(pieces, { turn = side, castle = {
+            wK = cas:find("K") ~= nil, wQ = cas:find("Q") ~= nil,
+            bK = cas:find("k") ~= nil, bQ = cas:find("q") ~= nil } })
+    end
+
+    describe("perft on tactical positions", function()
+        -- Reference counts from the chess programming wiki. Position 3 is
+        -- full of pawn checks, which went unseen before 1.3.0.
+        it("Kiwipete depth 2 = 2039", function()
+            local b = fromFEN("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq")
+            assert.are.equal(48, perft(b, 1))
+            assert.are.equal(2039, perft(b, 2))
+        end)
+        it("position 3 depth 4 = 43238", function()
+            local b = fromFEN("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w -")
+            assert.are.equal(14, perft(b, 1))
+            assert.are.equal(191, perft(b, 2))
+            assert.are.equal(2812, perft(b, 3))
+            assert.are.equal(43238, perft(b, 4))
+        end)
+        it("a king may not step next to an enemy pawn's attack", function()
+            -- White king e1, black pawn e3 attacks d2 and f2.
+            local b = fromFEN("4k3/8/8/8/8/4p3/8/4K3 w -")
+            for _, m in ipairs(b:getLegalMoves()) do
+                assert.is_false(m.tr == 7 and (m.tc == 4 or m.tc == 6))
+            end
+            assert.is_true(fromFEN("4k3/8/8/8/8/8/3p4/4K3 w -"):isInCheck("w"))
+        end)
+    end)
+
+    describe("AI time budget", function()
+        local function midgame()
+            return fromFEN("r1bq1rk1/pp2bppp/2n1pn2/3p4/2PP4/2N1PN2/PP3PPP/R2QKB1R w KQ")
+        end
+
+        it("single-pass evaluation equals the reference evaluation", function()
+            math.randomseed(11)
+            local checked = 0
+            for _ = 1, 10 do
+                local b = Board:new()
+                for _ = 1, 80 do
+                    if b.status ~= "playing" then break end
+                    assert.are.equal(b:_evaluateReference(), b:_evaluate())
+                    checked = checked + 1
+                    local ms = b:getLegalMoves()
+                    local m = ms[math.random(#ms)]
+                    b:makeMove(m.fr, m.fc, m.tr, m.tc, m.promo_piece)
+                end
+            end
+            assert.is_true(checked > 300)
+        end)
+
+        it("returns a legal move even when the budget is already spent", function()
+            local b = midgame()
+            local before = b:_currentFlat()
+            local scale = Board.AI_TIME_SCALE
+            Board.AI_TIME_SCALE = 0
+            local move = b:getAIMoveForLevel("hard")
+            Board.AI_TIME_SCALE = scale
+            assert.is_not_nil(move)
+            -- the interrupted search left the position as it was
+            assert.are.same(before, b:_currentFlat())
+            assert.are.equal("w", b.turn)
+            assert.is_true(b:makeMove(move.fr, move.fc, move.tr, move.tc, move.promo_piece))
+        end)
+
+        it("finds a mate in one and stays well within its budget", function()
+            -- Back-rank mate: Ra1-a8#.
+            local b = fromFEN("6k1/5ppp/8/8/8/8/8/R5K1 w -")
+            local t0 = os.clock()
+            local move = b:getAIMoveForLevel("hard")
+            assert.is_true(os.clock() - t0 < 2.5)
+            assert.are.same({ 8, 1, 1, 1 }, { move.fr, move.fc, move.tr, move.tc })
+        end)
+
+        it("searches a quiet middlegame position to full depth quickly", function()
+            local b = midgame()
+            local t0 = os.clock()
+            assert.is_not_nil(b:getAIMoveForLevel("hard"))
+            assert.is_true(os.clock() - t0 < 2.5)
+            assert.are.equal(3, b.ai_depth_reached)
+        end)
+    end)
+
     describe("PGN export/import round-trip", function()
         it("re-creates the same position from exported PGN", function()
             local b = Board:new()
