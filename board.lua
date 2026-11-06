@@ -1081,8 +1081,9 @@ local PST_OF = { PST_PAWN, PST_ROOK, PST_KNIGHT, PST_BISHOP, PST_QUEEN }
 
 -- Same score as summing MAT + pstBonus over the board, with isEndgame()
 -- folded into the same single pass.
-function ChessBoard:_evaluate()
+local function evalScan(self)
     local sq  = self.sq
+    local wkr, wkc, bkr, bkc = 1, 1, 1, 1
     local score = 0
     local wb, bb = 0, 0
     local has_wq, has_bq = false, false
@@ -1096,6 +1097,7 @@ function ChessBoard:_evaluate()
                 score = score + MAT[p]
                 if p <= 6 then
                     if p == 6 then
+                        wkr, wkc = r, c
                         king_mg = king_mg + PST_KING_MG[9 - r][c]
                         king_eg = king_eg + PST_KING_EG[9 - r][c]
                     else
@@ -1105,6 +1107,7 @@ function ChessBoard:_evaluate()
                     end
                 else
                     if p == 12 then
+                        bkr, bkc = r, c
                         king_mg = king_mg - PST_KING_MG[r][c]
                         king_eg = king_eg - PST_KING_EG[r][c]
                     else
@@ -1120,6 +1123,38 @@ function ChessBoard:_evaluate()
     score = score + (eg and king_eg or king_mg)
     if wb >= 2 then score = score + 30 end   -- bishop pair bonus
     if bb >= 2 then score = score - 30 end
+    return score, mat_w, mat_b, wkr, wkc, bkr, bkc
+end
+
+function ChessBoard:_evaluate()
+    return (evalScan(self))
+end
+
+-- Distance of a square from the centre: 0 on d4/e5, 6 in a corner.
+local function centreDist(r, c)
+    return (math.abs(2 * r - 9) + math.abs(2 * c - 9) - 2) / 2
+end
+
+-- The search's evaluation: _evaluate() plus what it takes to convert a won
+-- endgame instead of shuffling pieces until a draw.
+--  * Mop-up: once one side is a piece or more ahead and the other has
+--    little left, drive the losing king to the edge and bring the winning
+--    king close (KQK, KRK, ... are otherwise invisible to a short search).
+--  * Progress: past 20 reversible half-moves the score shrinks towards 0,
+--    so the side that is ahead prefers captures and pawn moves to a
+--    fifty-move draw.
+function ChessBoard:_searchEval()
+    local score, mat_w, mat_b, wkr, wkc, bkr, bkc = evalScan(self)
+    local diff = mat_w - mat_b
+    if diff >= 400 and mat_b <= 1300 then
+        score = score + 20 * centreDist(bkr, bkc)
+              + 10 * (14 - math.abs(wkr - bkr) - math.abs(wkc - bkc))
+    elseif diff <= -400 and mat_w <= 1300 then
+        score = score - 20 * centreDist(wkr, wkc)
+              - 10 * (14 - math.abs(wkr - bkr) - math.abs(wkc - bkc))
+    end
+    local hm = self.halfmove
+    if hm > 20 then score = math.floor(score * (100 - (hm - 20)) / 100 + 0.5) end
     return score
 end
 
@@ -1156,10 +1191,15 @@ end
 -- simulate a slower device (e.g. 0.04 ≈ a Kobo on a fast laptop).
 -- ---------------------------------------------------------------------------
 
+-- Easy also plays loosely, like a casual player: it picks at random among
+-- the moves within `margin` centipawns of its best and, with probability
+-- `blunder`, among those within `blunder_margin` (it can drop a piece). It
+-- still plays a mate it sees. Hard's budget leaves room for the move
+-- generation around the search so the whole move stays under 2.5 s.
 ChessBoard.AI_LEVELS = {
-    easy   = { depth = 1, budget = 0.5 },
+    easy   = { depth = 1, budget = 0.4, margin = 250, blunder = 0.5, blunder_margin = 1000 },
     medium = { depth = 2, budget = 1.5 },
-    hard   = { depth = 3, budget = 2.5 },
+    hard   = { depth = 4, budget = 2.3 },
 }
 ChessBoard.AI_TIME_SCALE = 1
 
@@ -1167,6 +1207,68 @@ local clock = os.clock
 local AI_ABORT = {}           -- error value thrown when the budget runs out
 local ai_deadline = math.huge -- no deadline outside a budgeted search
 local ai_countdown = 128      -- nodes until the next clock check
+
+-- Repetition: an additive Zobrist-style hash per position (random 31-bit
+-- keys from a fixed LCG, so sums stay exact in a double). ai_rep holds the
+-- positions of the game since the last capture or pawn move plus those on
+-- the current search line; reaching one again scores as a draw.
+local ZOB = {}
+do
+    local x = 20261105
+    for i = 1, 64 * 13 + 1 do
+        x = (x * 1103515245 + 12345) % 2147483648
+        ZOB[i] = x
+    end
+end
+local ZOB_BLACK = ZOB[64 * 13 + 1]
+local ai_rep = {}
+local ai_max_ply = 8
+
+local function hashFlat(flat, turn)
+    local h = (turn == "b") and ZOB_BLACK or 0
+    for i = 1, 64 do
+        local p = flat[i]
+        if p ~= 0 then h = h + ZOB[(i - 1) * 13 + p + 1] end
+    end
+    return h
+end
+
+function ChessBoard:_hash()
+    local sq = self.sq
+    local h = (self.turn == "b") and ZOB_BLACK or 0
+    for r = 1, 8 do
+        local row, base = sq[r], (r - 1) * 104
+        for c = 1, 8 do
+            local p = row[c]
+            if p ~= 0 then h = h + ZOB[base + (c - 1) * 13 + p + 1] end
+        end
+    end
+    return h
+end
+
+-- True when `color` has nothing but its king and pawns (where stalemate
+-- becomes a real risk and is worth testing for at the search horizon).
+function ChessBoard:_kingAndPawnsOnly(color)
+    local sq = self.sq
+    local lo, hi = (color == "w") and 2 or 8, (color == "w") and 5 or 11
+    for r = 1, 8 do
+        local row = sq[r]
+        for c = 1, 8 do
+            local p = row[c]
+            if p >= lo and p <= hi then return false end
+        end
+    end
+    return true
+end
+
+function ChessBoard:_hasLegalMove()
+    local kr, kc = self:findKing(self.turn)
+    for _, m in ipairs(self:_genPseudoMoves(self.turn)) do
+        local saved = self:_applyIfLegal(m, kr, kc)
+        if saved then self:_undoMove(saved); return true end
+    end
+    return false
+end
 
 local function aiTick()
     ai_countdown = ai_countdown - 1
@@ -1238,7 +1340,7 @@ end
 function ChessBoard:_quiescence(alpha, beta)
     aiTick()
     local maximizing = (self.turn == "w")
-    local stand_pat  = self:_evaluate()
+    local stand_pat  = self:_searchEval()
 
     if maximizing then
         if stand_pat >= beta  then return beta  end
@@ -1280,10 +1382,11 @@ end
 
 -- Legality is tested lazily, move by move, so the moves a cutoff skips are
 -- never checked at all; mate / stalemate is detected when none was legal.
-function ChessBoard:_alphaBeta(depth, alpha, beta, maximizing)
-    if depth == 0 then
-        return self:_quiescence(alpha, beta), nil
-    end
+-- At the horizon a side in check gets one more ply (so a mate there is seen
+-- as a mate), and a bare king (or king and pawns) is tested for stalemate.
+-- A position already met in the game or on the search line is a draw.
+function ChessBoard:_alphaBeta(depth, alpha, beta, maximizing, ply)
+    ply = ply or 1
     aiTick()
 
     if self.halfmove >= 100 then
@@ -1295,6 +1398,31 @@ function ChessBoard:_alphaBeta(depth, alpha, beta, maximizing)
         return 0, nil
     end
 
+    local h
+    if depth > 0 or self.halfmove >= 4 then
+        h = self:_hash()
+        if ai_rep[h] then return 0, nil end
+    end
+
+    if depth <= 0 then
+        if ply < ai_max_ply and self:isInCheck(self.turn) then
+            depth = 1
+        else
+            if self:_kingAndPawnsOnly(self.turn) and not self:_hasLegalMove() then
+                return 0, nil
+            end
+            return self:_quiescence(alpha, beta), nil
+        end
+    end
+
+    if not h then h = self:_hash() end
+    ai_rep[h] = true
+    local val, mv = self:_alphaBetaMoves(depth, alpha, beta, maximizing, ply)
+    ai_rep[h] = nil
+    return val, mv
+end
+
+function ChessBoard:_alphaBetaMoves(depth, alpha, beta, maximizing, ply)
     local moves = self:_genPseudoMoves(self.turn)
     sortMoves(moves, self.sq, ai_killers[depth])
     local kr, kc = self:findKing(self.turn)
@@ -1304,7 +1432,7 @@ function ChessBoard:_alphaBeta(depth, alpha, beta, maximizing)
     for _, m in ipairs(moves) do
         local saved = self:_applyIfLegal(m, kr, kc)
         if saved then
-            local val = self:_alphaBeta(depth - 1, alpha, beta, not maximizing)
+            local val = self:_alphaBeta(depth - 1, alpha, beta, not maximizing, ply + 1)
             self:_undoMove(saved)
             if maximizing then
                 if val > best_val then best_val = val; best_move = m end
@@ -1329,7 +1457,7 @@ end
 
 -- One root iteration at `depth`. Fills `vals[i]` for each root move it
 -- finishes and returns the best value and every move tied at it.
-function ChessBoard:_searchRoot(legal, depth, maximizing, vals)
+function ChessBoard:_searchRoot(legal, depth, maximizing, vals, exact)
     local best_val   = maximizing and -math.huge or math.huge
     local best_moves = {}
 
@@ -1342,11 +1470,11 @@ function ChessBoard:_searchRoot(legal, depth, maximizing, vals)
     for i, m in ipairs(legal) do
         local alpha = maximizing and (best_val - 1) or -math.huge
         local beta  = maximizing and math.huge or (best_val + 1)
-        if best_val == math.huge or best_val == -math.huge then
+        if exact or best_val == math.huge or best_val == -math.huge then
             alpha, beta = -math.huge, math.huge
         end
         local saved = self:_applyMove(m)
-        local val   = self:_alphaBeta(depth - 1, alpha, beta, not maximizing)
+        local val   = self:_alphaBeta(depth - 1, alpha, beta, not maximizing, 1)
         self:_undoMove(saved)
         vals[i] = val
         if maximizing then
@@ -1369,12 +1497,24 @@ end
 -- Returns the AI's move: iterative deepening up to `depth` plies (plus
 -- quiescence), stopping early after `budget` seconds (scaled by
 -- AI_TIME_SCALE; nil = no limit). Always returns a legal move when one exists.
-function ChessBoard:getAIMove(depth, budget)
+function ChessBoard:getAIMove(depth, budget, opts)
     depth = depth or 3
+    opts = opts or {}
     if self.status ~= "playing" then return nil end
 
     ai_killers = {}  -- reset killer table for this search
     ai_countdown = 128
+    ai_max_ply = depth + 6
+    -- Positions since the last capture or pawn move (each snapshot is the
+    -- position before a move), and the root itself.
+    ai_rep = {}
+    local hist = self._history
+    for k = math.max(1, #hist - self.halfmove + 1), #hist do
+        ai_rep[hashFlat(hist[k].sq_flat, hist[k].turn)] = true
+    end
+    ai_rep[self:_hash()] = true
+    local noisy = opts.margin ~= nil
+    local final_vals, final_legal
 
     local maximizing = (self.turn == "w")
     local legal = self:getLegalMoves()
@@ -1388,7 +1528,7 @@ function ChessBoard:getAIMove(depth, budget)
     self.ai_depth_reached = 0
     for d = 1, depth do
         local vals = {}
-        local ok, best_val, best_moves = pcall(self._searchRoot, self, legal, d, maximizing, vals)
+        local ok, best_val, best_moves = pcall(self._searchRoot, self, legal, d, maximizing, vals, noisy)
         if not ok then
             if best_val ~= AI_ABORT then
                 ai_deadline = math.huge
@@ -1413,6 +1553,7 @@ function ChessBoard:getAIMove(depth, budget)
             break
         end
         chosen = best_moves
+        final_vals, final_legal = vals, legal
         self.ai_depth_reached = d
         -- Next iteration: best root moves first (stable on equal values).
         local idx = {}
@@ -1429,18 +1570,55 @@ function ChessBoard:getAIMove(depth, budget)
         legal = reordered
     end
     ai_deadline = math.huge
+    ai_rep = {}
+
+    -- Root scores of the deepest finished iteration, by "fr,fc,tr,tc"
+    -- (exact for a noisy level, bounds otherwise): for tests and debugging.
+    self.ai_root_values = {}
+    if final_vals then
+        for i, m in ipairs(final_legal) do
+            if final_vals[i] then
+                self.ai_root_values[m.fr .. "," .. m.fc .. "," .. m.tr .. "," .. m.tc] = final_vals[i]
+            end
+        end
+    end
 
     local best_move = chosen[math.random(#chosen)]
+    if noisy and final_vals then
+        best_move = self:_noisyChoice(final_legal, final_vals, maximizing, opts) or best_move
+    end
     if best_move and best_move.special == "promo" then
         best_move.promo_piece = (self.turn == "w") and ChessBoard.W_QUEEN or ChessBoard.B_QUEEN
     end
     return best_move
 end
 
+-- Easy's looser choice among exactly scored root moves: any move within
+-- `margin` of the best, or (probability `blunder`) within `blunder_margin`.
+-- A found mate is always played. Draws from math.random.
+function ChessBoard:_noisyChoice(legal, vals, maximizing, opts)
+    local sign = maximizing and 1 or -1
+    local best = -math.huge
+    for i = 1, #legal do
+        if vals[i] and sign * vals[i] > best then best = sign * vals[i] end
+    end
+    if best >= 30000 then return nil end
+    local margin = opts.margin
+    if opts.blunder and math.random() < opts.blunder then
+        margin = opts.blunder_margin or margin
+    end
+    local pool = {}
+    for i = 1, #legal do
+        if vals[i] and sign * vals[i] >= best - margin then pool[#pool + 1] = legal[i] end
+    end
+    if #pool == 0 then return nil end
+    return pool[math.random(#pool)]
+end
+
 -- Plays at a named level ("easy" / "medium" / "hard"), within its budget.
 function ChessBoard:getAIMoveForLevel(level)
     local L = ChessBoard.AI_LEVELS[level] or ChessBoard.AI_LEVELS.medium
-    return self:getAIMove(L.depth, L.budget)
+    return self:getAIMove(L.depth, L.budget, L)
 end
 
 return ChessBoard

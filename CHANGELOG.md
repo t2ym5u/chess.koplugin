@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0] - 2026-11-05
+
+### Changed
+- Easy now plays like a casual player: it picks at random among moves that
+  are nearly as good as its best, and sometimes slips and drops a piece.
+  It still plays a checkmate it sees. Before, it never lost to a beginner.
+- Hard looks four moves ahead instead of three (within 2.5 s on an
+  e-reader), so the three levels are further apart.
+
+### Fixed
+- The AI converts won games instead of drawing them: it now sees a
+  stalemate or a checkmate at the end of its search, counts a position
+  that has already occurred as a draw, drives a lone king to the edge with
+  its own king, and prefers captures and pawn moves when the fifty-move
+  rule gets close. Easy used to stalemate or repeat moves in about a third
+  of its games while several pawns up.
+
 ## [1.3.2] - 2026-11-04
 
 ### Fixed

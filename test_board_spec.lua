@@ -417,12 +417,118 @@ describe("ChessBoard", function()
             assert.are.same({ 8, 1, 1, 1 }, { move.fr, move.fc, move.tr, move.tc })
         end)
 
-        it("searches a quiet middlegame position to full depth quickly", function()
+        it("keeps a hard move within its budget at Kobo speed", function()
+            -- 0.04 ~ a Kobo Aura on a desktop: 2.3 s of Kobo is ~0.09 s here.
             local b = midgame()
+            local scale = Board.AI_TIME_SCALE
+            Board.AI_TIME_SCALE = 0.04
             local t0 = os.clock()
             assert.is_not_nil(b:getAIMoveForLevel("hard"))
-            assert.is_true(os.clock() - t0 < 2.5)
-            assert.are.equal(3, b.ai_depth_reached)
+            local dt = os.clock() - t0
+            Board.AI_TIME_SCALE = scale
+            assert.is_true(dt < 0.15)
+            assert.is_true(b.ai_depth_reached >= 2)
+        end)
+    end)
+
+    describe("AI levels", function()
+        local function key(m) return m.fr .. "," .. m.fc .. "," .. m.tr .. "," .. m.tc end
+
+        it("are three distinct settings within 2.5 s", function()
+            local L = Board.AI_LEVELS
+            assert.is_true(L.easy.depth < L.medium.depth)
+            assert.is_true(L.medium.depth < L.hard.depth)
+            assert.is_not_nil(L.easy.margin)
+            assert.is_true(L.easy.blunder > 0 and L.easy.blunder < 1)
+            assert.is_nil(L.medium.margin)
+            assert.is_nil(L.hard.margin)
+            for _, lv in pairs(L) do assert.is_true(lv.budget <= 2.5) end
+        end)
+
+        it("scores a stalemate at the search horizon as a draw", function()
+            -- White Kf6 Qg1, black Kh8: Qg6 stalemates.
+            local b = loadPosition({ {1, 8, Board.B_KING}, {3, 6, Board.W_KING},
+                                     {8, 7, Board.W_QUEEN} })
+            local saved = b:_applyMove({ fr = 8, fc = 7, tr = 3, tc = 7 })
+            assert.are.equal(0, (b:_alphaBeta(0, -math.huge, math.huge, false, 1)))
+            b:_undoMove(saved)
+            for _, lv in ipairs({ "easy", "medium", "hard" }) do
+                for seed = 1, 5 do
+                    math.randomseed(seed)
+                    local m = b:getAIMoveForLevel(lv)
+                    assert.are_not.equal("8,7,3,7", key(m))
+                end
+            end
+        end)
+
+        it("sees a mate at the search horizon and always plays a mate in one", function()
+            for seed = 1, 10 do
+                math.randomseed(seed)
+                local b = fromFEN("6k1/5ppp/8/8/8/8/8/R5K1 w -")
+                local m = b:getAIMoveForLevel("easy")
+                assert.are.equal("8,1,1,1", key(m))
+            end
+        end)
+
+        it("scores a repeated position as a draw", function()
+            -- 1.e4 Nf6 2.Nf3 Ng8 3.Ng1: ...Nf6 now repeats the position
+            -- after 1...Nf6, which the plain evaluation does not score 0.
+            local b = Board:new()
+            for _, m in ipairs({ {7,5,5,5}, {1,7,3,6}, {8,7,6,6}, {3,6,1,7}, {6,6,8,7} }) do
+                assert.is_true(b:makeMove(m[1], m[2], m[3], m[4]))
+            end
+            local saved = b:_applyMove({ fr = 1, fc = 7, tr = 3, tc = 6 })
+            assert.are_not.equal(0, b:_searchEval())
+            b:_undoMove(saved)
+            b:getAIMove(1, nil, { margin = 0 })
+            assert.are.equal(0, b.ai_root_values["1,7,3,6"])
+        end)
+
+        it("drives a lone king to mate instead of drawing (KQ vs K)", function()
+            for _, lv in ipairs({ "medium", "hard" }) do
+                for seed = 1, 3 do
+                    math.randomseed(seed)
+                    local b = loadPosition({ {1, 5, Board.B_KING}, {8, 1, Board.W_KING},
+                                             {8, 4, Board.W_QUEEN} })
+                    local plies = 0
+                    while b.status == "playing" and plies < 120 do
+                        local m
+                        if b.turn == "w" then
+                            m = b:getAIMoveForLevel(lv)
+                        else
+                            local ms = b:getLegalMoves(); m = ms[math.random(#ms)]
+                        end
+                        assert.is_true(b:makeMove(m.fr, m.fc, m.tr, m.tc, m.promo_piece))
+                        plies = plies + 1
+                    end
+                    assert.are.equal("checkmate", b.status)
+                end
+            end
+        end)
+
+        it("Medium and Hard take a hanging queen", function()
+            -- Black queen on d4 attacked by the knight on f3, undefended.
+            local b = loadPosition({ {1, 5, Board.B_KING}, {5, 4, Board.B_QUEEN},
+                                     {8, 5, Board.W_KING}, {6, 6, Board.W_KNIGHT},
+                                     {7, 1, Board.W_PAWN} })
+            for _, lv in ipairs({ "medium", "hard" }) do
+                assert.are.equal("6,6,5,4", key(b:getAIMoveForLevel(lv)))
+            end
+        end)
+
+        it("Easy is reproducible for a given random seed", function()
+            local function game()
+                math.randomseed(42)
+                local b = Board:new()
+                local seq = {}
+                for _ = 1, 10 do
+                    local m = b:getAIMoveForLevel("easy")
+                    b:makeMove(m.fr, m.fc, m.tr, m.tc, m.promo_piece)
+                    seq[#seq + 1] = key(m)
+                end
+                return table.concat(seq, " ")
+            end
+            assert.are.equal(game(), game())
         end)
     end)
 

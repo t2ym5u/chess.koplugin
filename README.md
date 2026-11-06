@@ -21,6 +21,7 @@ Standard chess rules. Move pieces to put the opponent's king in checkmate. Speci
 
 ## Features
 
+- **Built-in AI** — three levels: Easy plays like a casual player (it sometimes drops a piece), Medium looks two moves ahead, Hard four (at most 2.5 s per move on an e-reader); all of them see checkmate, stalemate and repetition draws, and finish off a lone king
 - **Two-player local mode**
 - **Move highlight** — shows legal moves for selected piece
 - **Check indicator** — alerts when a king is in check
@@ -35,7 +36,7 @@ Standard chess rules. Move pieces to put the opponent's king in checkmate. Speci
 1. Download `chess.koplugin.zip` from the [latest release](../../releases/latest).
 2. Extract into the `plugins/` folder of your KOReader data directory.
 3. Restart KOReader.
-4. Open the menu → **Tools** → **Chess**.
+4. Open the menu → **Tools** → **Games** → board games → **Chess**.
 
 ## Controls
 
