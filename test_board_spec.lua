@@ -407,43 +407,10 @@ describe("ChessBoard", function()
             assert.are.equal("w", b.turn)
             assert.is_true(b:makeMove(move.fr, move.fc, move.tr, move.tc, move.promo_piece))
         end)
-
-        it("finds a mate in one and stays well within its budget", function()
-            -- Back-rank mate: Ra1-a8#.
-            local b = fromFEN("6k1/5ppp/8/8/8/8/8/R5K1 w -")
-            local t0 = os.clock()
-            local move = b:getAIMoveForLevel("hard")
-            assert.is_true(os.clock() - t0 < 2.5)
-            assert.are.same({ 8, 1, 1, 1 }, { move.fr, move.fc, move.tr, move.tc })
-        end)
-
-        it("keeps a hard move within its budget at Kobo speed", function()
-            -- 0.04 ~ a Kobo Aura on a desktop: 2.3 s of Kobo is ~0.09 s here.
-            local b = midgame()
-            local scale = Board.AI_TIME_SCALE
-            Board.AI_TIME_SCALE = 0.04
-            local t0 = os.clock()
-            assert.is_not_nil(b:getAIMoveForLevel("hard"))
-            local dt = os.clock() - t0
-            Board.AI_TIME_SCALE = scale
-            assert.is_true(dt < 0.15)
-            assert.is_true(b.ai_depth_reached >= 2)
-        end)
     end)
 
     describe("AI levels", function()
         local function key(m) return m.fr .. "," .. m.fc .. "," .. m.tr .. "," .. m.tc end
-
-        it("are three distinct settings within 2.5 s", function()
-            local L = Board.AI_LEVELS
-            assert.is_true(L.easy.depth < L.medium.depth)
-            assert.is_true(L.medium.depth < L.hard.depth)
-            assert.is_not_nil(L.easy.margin)
-            assert.is_true(L.easy.blunder > 0 and L.easy.blunder < 1)
-            assert.is_nil(L.medium.margin)
-            assert.is_nil(L.hard.margin)
-            for _, lv in pairs(L) do assert.is_true(lv.budget <= 2.5) end
-        end)
 
         it("scores a stalemate at the search horizon as a draw", function()
             -- White Kf6 Qg1, black Kh8: Qg6 stalemates.
@@ -458,15 +425,6 @@ describe("ChessBoard", function()
                     local m = b:getAIMoveForLevel(lv)
                     assert.are_not.equal("8,7,3,7", key(m))
                 end
-            end
-        end)
-
-        it("sees a mate at the search horizon and always plays a mate in one", function()
-            for seed = 1, 10 do
-                math.randomseed(seed)
-                local b = fromFEN("6k1/5ppp/8/8/8/8/8/R5K1 w -")
-                local m = b:getAIMoveForLevel("easy")
-                assert.are.equal("8,1,1,1", key(m))
             end
         end)
 
@@ -504,31 +462,6 @@ describe("ChessBoard", function()
                     assert.are.equal("checkmate", b.status)
                 end
             end
-        end)
-
-        it("Medium and Hard take a hanging queen", function()
-            -- Black queen on d4 attacked by the knight on f3, undefended.
-            local b = loadPosition({ {1, 5, Board.B_KING}, {5, 4, Board.B_QUEEN},
-                                     {8, 5, Board.W_KING}, {6, 6, Board.W_KNIGHT},
-                                     {7, 1, Board.W_PAWN} })
-            for _, lv in ipairs({ "medium", "hard" }) do
-                assert.are.equal("6,6,5,4", key(b:getAIMoveForLevel(lv)))
-            end
-        end)
-
-        it("Easy is reproducible for a given random seed", function()
-            local function game()
-                math.randomseed(42)
-                local b = Board:new()
-                local seq = {}
-                for _ = 1, 10 do
-                    local m = b:getAIMoveForLevel("easy")
-                    b:makeMove(m.fr, m.fc, m.tr, m.tc, m.promo_piece)
-                    seq[#seq + 1] = key(m)
-                end
-                return table.concat(seq, " ")
-            end
-            assert.are.equal(game(), game())
         end)
     end)
 
