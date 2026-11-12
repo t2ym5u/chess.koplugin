@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.1] - 2026-11-12
+
+### Changed
+- Picks up game-common 1.16.0: games for two readers (new Two readers
+  category) and the shared Start / Join dialog.
+
 ## [1.4.0] - 2026-11-05
 
 ### Changed
