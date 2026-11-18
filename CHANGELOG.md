@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.2] - 2026-11-18
+
+### Fixed
+- Flip turns the board on screen at once.
+
 ## [1.4.1] - 2026-11-12
 
 ### Changed

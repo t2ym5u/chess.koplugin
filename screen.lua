@@ -250,7 +250,7 @@ function EchecsScreen:onCellTap(r, c)
         return
     end
 
-    self.board_widget:refresh()
+    self.board_widget:refresh(self)
     self:updateStatus()
 
     if result == "move" then
@@ -296,7 +296,7 @@ function EchecsScreen:showPromoDialog()
                 UIManager:close(self._promo_dialog)
                 self._promo_dialog = nil
                 board:finishPromo(piece_val)
-                self.board_widget:refresh()
+                self.board_widget:refresh(self)
                 self:updateStatus()
                 if self.clock then
                     if board.status == "playing" then self.clock:switchPlayer() else self.clock:stop() end
@@ -383,7 +383,7 @@ function EchecsScreen:onFlipBoard()
     self._flipped = not (self._flipped or false)
     if self.board_widget then
         self.board_widget.flipped = self._flipped
-        self.board_widget:refresh()
+        self.board_widget:refresh(self)
     end
 end
 
@@ -407,7 +407,7 @@ function EchecsScreen:onUndo()
         if self.board.status ~= "playing" then self.clock:stop() end
     end
     self.plugin:saveState(self:serializeState())
-    self.board_widget:refresh()
+    self.board_widget:refresh(self)
     self:updateStatus()
 end
 
@@ -430,7 +430,7 @@ function EchecsScreen:onRedo()
         if self.board.status ~= "playing" then self.clock:stop() end
     end
     self.plugin:saveState(self:serializeState())
-    self.board_widget:refresh()
+    self.board_widget:refresh(self)
     self:updateStatus()
     if self.board.status ~= "playing" then
         self:onGameEnd()
@@ -465,7 +465,7 @@ function EchecsScreen:triggerAI()
         if self.clock then
             if self.board.status == "playing" then self.clock:switchPlayer() else self.clock:stop() end
         end
-        if self.board_widget then self.board_widget:refresh() end
+        if self.board_widget then self.board_widget:refresh(self) end
         self.plugin:saveState(self:serializeState())
         self:updateStatus()
         if self.board.status ~= "playing" then
