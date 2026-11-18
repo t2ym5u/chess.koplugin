@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.3] - 2026-11-18
+
+### Changed
+- Picks up game-common 1.17.0, which now redraws the board through the
+  game screen (the fix of 1.4.2 moves there; nothing changes on screen).
+
 ## [1.4.2] - 2026-11-18
 
 ### Fixed

@@ -9,7 +9,6 @@ local Device     = require("device")
 local Font       = require("ui/font")
 local Geom       = require("ui/geometry")
 local RenderText = require("ui/rendertext")
-local UIManager  = require("ui/uimanager")
 
 local gwb            = require("grid_widget_base")
 local GridWidgetBase = gwb.GridWidgetBase
@@ -204,16 +203,6 @@ function EchecsBoardWidget:paintTo(bb, x, y)
         RenderText:renderUtf8Text(bb, lx2, base2, label_face, file_label,
             true, false, Blitbuffer.COLOR_GRAY_5)
     end
-end
-
--- GridWidgetBase:refresh marks the board itself dirty, but UIManager only
--- repaints top-level widgets: the old pixels come back. Callers pass the
--- screen as `parent`, which repaints it and refreshes only the board.
-function EchecsBoardWidget:refresh(parent)
-    if not parent then return GridWidgetBase.refresh(self) end
-    local r = self.paint_rect
-    local geom = Geom:new{ x = r.x, y = r.y, w = r.w, h = r.h }
-    UIManager:setDirty(parent, function() return "ui", geom end)
 end
 
 return EchecsBoardWidget

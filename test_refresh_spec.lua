@@ -23,13 +23,22 @@ describe("board refresh", function()
     end
 
     setup(function()
+        -- The real grid_widget_base (common/ is game-common): its refresh is
+        -- the one under test.
+        saved.path = package.path
+        package.path = DIR .. "common/?.lua;" .. package.path
+        package.loaded["grid_widget_base"] = nil
         saved.loaded = {}
         for k, v in pairs(package.loaded) do saved.loaded[k] = v end
         for k in pairs(saved.loaded) do
             if type(k) == "string" and k:sub(1, #DIR) == DIR then package.loaded[k] = nil end
         end
-        local stubs = { "device", "screen_base", "menu_helper", "i18n", "grid_widget_base" }
+        local stubs = { "device", "screen_base", "menu_helper", "i18n" }
         for _, name in ipairs(stubs) do package.loaded[name] = stub() end
+        -- GridWidgetBase extends InputContainer, and the board extends it.
+        package.loaded["ui/widget/container/inputcontainer"] = {
+            extend = function(base, t) return setmetatable(t or {}, { __index = base }) end,
+        }
         package.loaded["ui/uimanager"] = setmetatable({
             setDirty = function(_, w) dirty[#dirty + 1] = w end,
         }, { __index = function() return function() end end })
@@ -46,6 +55,7 @@ describe("board refresh", function()
             if saved.loaded[k] == nil then package.loaded[k] = nil end
         end
         for k, v in pairs(saved.loaded) do package.loaded[k] = v end
+        package.path = saved.path
     end)
 
     -- A screen built from `fields`; methods it does not define do nothing.
