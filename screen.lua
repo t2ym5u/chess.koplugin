@@ -350,7 +350,7 @@ function EchecsScreen:onGameEnd()
             return
         end
     end
-    UIManager:scheduleIn(0.3, function()
+    self:schedule(0.3, function()
         UIManager:show(InfoMessage:new{ text = msg, timeout = 5 })
     end)
 end
@@ -360,6 +360,8 @@ end
 -- ---------------------------------------------------------------------------
 
 function EchecsScreen:onNewGame()
+    self:cancelScheduled()            -- the old game's end message
+    self:_getEngine():cancelPending()  -- an AI move still pending belongs to the old game
     self.board:reset()
     self._time_forfeit = nil
     if self.clock then
@@ -393,6 +395,7 @@ end
 
 function EchecsScreen:onUndo()
     self:_getEngine():cancelPending()
+    self:cancelScheduled()  -- a game-end message for the undone move
     local players = self.plugin:getSetting("players", 1)
     -- In 1-player mode, undo twice (undo AI move and human move)
     if players == 1 then
@@ -459,6 +462,12 @@ function EchecsScreen:triggerAI()
     self:updateStatus(_("AI is thinking..."))
     local diff = self.plugin:getSetting("difficulty", "medium")
     self:_getEngine():requestMove(self.board, diff, function(move)
+        -- Re-checked: "2 players", a new game or a flag fall may have come
+        -- in the meantime, or the screen may have been closed.
+        if self.board.status ~= "playing" or self._time_forfeit or not self:_isAITurn()
+                or (UIManager.isWidgetShown and not UIManager:isWidgetShown(self)) then
+            return
+        end
         if move then
             self.board:makeMove(move.fr, move.fc, move.tr, move.tc, move.promo_piece)
         end
@@ -523,6 +532,7 @@ end
 function EchecsScreen:closeScreen()
     if self.clock then self.clock:stop() end
     if self._uci_engine then self._uci_engine:stop() end
+    if self._home_engine then self._home_engine:stop() end
     ScreenBase.closeScreen(self)
 end
 
