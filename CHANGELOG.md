@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.4] - 2026-11-24
+
+### Changed
+- Picks up game-common 1.18.0: a status line cut off with "…" opens in full
+  when tapped, so a long hint can be read.
+
 ## [1.4.3] - 2026-11-18
 
 ### Changed
